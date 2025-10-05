@@ -1,0 +1,5 @@
+# Ignorar subrepositorios internos
+/databases/BD_Users_Primac/
+/databases/Primac-Claims-Payments-DB/
+/databases/proyecto_postgresql/
+/services/data_science_api/
