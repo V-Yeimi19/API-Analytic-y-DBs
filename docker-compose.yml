@@ -1,19 +1,22 @@
 version: "3.9"
 
 services:
-  # ===== DATABASE SERVICES =====
-  
-  # MySQL Database (BD_Users_Primac)
+  # ==========================
+  # MYSQL DATABASE
+  # ==========================
   mysql-db:
-    build: ./databases/BD_Users_Primac
+    image: yiyi19/primac-mysql:latest
+    build:
+      context: ./databases/BD_Users_Primac
+      dockerfile: Dockerfile
     container_name: primac_mysql_db
     ports:
-      - "3307:3306"
+      - "${MYSQL_PORT:-8123}:3306"
     environment:
-      MYSQL_DATABASE: primac
-      MYSQL_USER: admin
-      MYSQL_PASSWORD: admin
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-primac}
+      MYSQL_USER: ${MYSQL_USER:-admin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-admin}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -24,49 +27,45 @@ services:
       timeout: 10s
       retries: 5
 
-  # PostgreSQL Database
+  # ==========================
+  # POSTGRESQL DATABASE
+  # ==========================
   postgresql-db:
-    image: postgres:15
+    image: yiyi19/primac-postgres:latest
+    build:
+      context: ./databases/proyecto_postgresql
+      dockerfile: Dockerfile
     container_name: primac_postgresql_db
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-8123}:5432"
     environment:
-      POSTGRES_DB: primac_postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-primac_postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgresql_data:/var/lib/postgresql/data
     networks:
       - primac_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 30s
       timeout: 10s
       retries: 5
 
-  # PostgreSQL API (proyecto_postgresql)
-  postgresql-api:
-    build:
-      context: ./databases/proyecto_postgresql
-      dockerfile: Dockerfile
-    container_name: primac_postgresql_api
-    ports:
-      - "8001:8000"
-    networks:
-      - primac_network
-    depends_on:
-      - postgresql-db
-
-  # Cassandra Database (Primac-Claims-Payments-DB)
+  # ==========================
+  # CASSANDRA DATABASE + SETUP + FAKE DATA
+  # ==========================
   cassandra-db:
-    image: cassandra:4.1
+    image: yiyi19/primac-cassandra:latest
+    build:
+      context: ./databases/Primac-Claims-Payments-DB
     container_name: primac_cassandra_db
     ports:
-      - "9042:9042"
+      - "${CASSANDRA_PORT:-8123}:9042"
     environment:
-      - CASSANDRA_CLUSTER_NAME=primac-cluster
-      - CASSANDRA_NUM_TOKENS=128
-      - CASSANDRA_START_RPC=true
+      - CASSANDRA_CLUSTER_NAME=${CASSANDRA_CLUSTER_NAME:-primac-cluster}
+      - CASSANDRA_NUM_TOKENS=${CASSANDRA_NUM_TOKENS:-128}
+      - CASSANDRA_START_RPC=${CASSANDRA_START_RPC:-true}
     volumes:
       - cassandra_data:/var/lib/cassandra
     networks:
@@ -77,64 +76,89 @@ services:
       timeout: 10s
       retries: 15
 
-  # Cassandra Setup
   cassandra-setup:
     image: cassandra:4.1
+    container_name: primac_cassandra_setup
     restart: "no"
     depends_on:
       cassandra-db:
         condition: service_healthy
     volumes:
       - ./databases/Primac-Claims-Payments-DB/docker/scripts:/scripts
-    entrypoint: ["sh", "-c", "cqlsh cassandra-db -f /scripts/keyspace.local.cql && cqlsh cassandra-db -f /scripts/tables.cql"]
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cqlsh cassandra-db -f /scripts/keyspace.local.cql && \
+        cqlsh cassandra-db -f /scripts/tables.cql
     networks:
       - primac_network
 
-  # ===== APPLICATION SERVICES =====
+  cassandra-faker:
+    build:
+      context: ./databases/Primac-Claims-Payments-DB/faker
+      dockerfile: Dockerfile
+    container_name: primac_cassandra_faker
+    restart: "no"
+    depends_on:
+      cassandra-setup:
+        condition: service_completed_successfully
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - primac_network
 
-  # Data Science API (existing service)
+  # ==========================
+  # DATA SCIENCE API
+  # ==========================
   data-science-api:
-    build: ./services/data_science_api
+    image: yiyi19/primac-data-science-api:latest
+    build:
+      context: ./services/data_science_api
+      dockerfile: Dockerfile
     container_name: primac_data_science_api
     ports:
-      - "8000:8000"
+      - "${DATA_SCIENCE_API_PORT:-8123}:8000"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-      - S3_BUCKET=${S3_BUCKET}
-    networks:
-      - primac_network
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      MYSQL_URL: mysql://${MYSQL_USER:-admin}:${MYSQL_PASSWORD:-admin}@mysql-db:3306/${MYSQL_DATABASE:-primac}
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgresql-db:5432/${POSTGRES_DB:-primac_postgres}
+      CASSANDRA_HOST: cassandra-db
+      CASSANDRA_PORT: ${CASSANDRA_PORT:-9042}
     depends_on:
       - mysql-db
       - postgresql-db
       - cassandra-db
+    networks:
+      - primac_network
     command: uvicorn main:app --host 0.0.0.0 --port 8000
 
-  # ===== MANAGEMENT TOOLS =====
-
-  # Adminer for database management
+  # ==========================
+  # MANAGEMENT TOOLS
+  # ==========================
   adminer:
     image: adminer
     container_name: primac_adminer
     restart: always
     ports:
-      - "8081:8080"
+      - "${ADMINER_PORT:-8123}:8080"
     networks:
       - primac_network
     depends_on:
       - mysql-db
       - postgresql-db
 
-  # pgAdmin for PostgreSQL management
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: primac_pgadmin
     ports:
-      - "8082:80"
+      - "${PGADMIN_PORT:-8123}:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     networks:
@@ -142,21 +166,18 @@ services:
     depends_on:
       - postgresql-db
 
-# ===== VOLUMES =====
+# ==========================
+# VOLUMES
+# ==========================
 volumes:
   mysql_data:
-    driver: local
   postgresql_data:
-    driver: local
   cassandra_data:
-    driver: local
   pgadmin_data:
-    driver: local
 
-# ===== NETWORKS =====
+# ==========================
+# NETWORKS
+# ==========================
 networks:
   primac_network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16

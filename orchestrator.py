@@ -260,6 +260,16 @@ def show_help() -> None:
   • pgAdmin (puerto 8082)
 """
     print(help_text)
+    
+def seed_faker() -> None:
+    """Ejecuta el contenedor de faker-seed para poblar datos en Cassandra"""
+    colored_print("🌱 Sembrando datos falsos en Cassandra...", Colors.YELLOW)
+    result = run_command(f"docker compose -f {COMPOSE_FILE} up --no-deps faker-seed")
+    if result == 0:
+        colored_print("✅ Datos de prueba insertados correctamente", Colors.GREEN)
+    else:
+        colored_print("❌ Error al sembrar datos falsos", Colors.RED)
+
 
 def main():
     """Función principal"""
@@ -298,6 +308,9 @@ def main():
         
     elif command in ["help", "--help", "-h"]:
         show_help()
+        
+    elif command == "faker":
+        seed_faker()
         
     else:
         colored_print(f"❌ Comando '{command}' no reconocido", Colors.RED)
