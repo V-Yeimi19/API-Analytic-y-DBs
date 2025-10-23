@@ -1,184 +1,120 @@
-version: "3.9"
-
 services:
-  # ==========================
-  # MYSQL DATABASE
-  # ==========================
-  mysql-db:
-    image: yiyi19/primac-mysql:latest
-    build:
-      context: ./databases/BD_Users_Primac
-      dockerfile: Dockerfile
-    container_name: primac_mysql_db
-    ports:
-      - "${MYSQL_PORT:-8123}:3306"
+  # 🗄️ Base de datos MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: always
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-primac}
-      MYSQL_USER: ${MYSQL_USER:-admin}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-admin}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - primac_network
+    - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
+    - MYSQL_DATABASE=${MYSQL_DATABASE}
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-
-  # ==========================
-  # POSTGRESQL DATABASE
-  # ==========================
-  postgresql-db:
-    image: yiyi19/primac-postgres:latest
-    build:
-      context: ./databases/proyecto_postgresql
-      dockerfile: Dockerfile
-    container_name: primac_postgresql_db
     ports:
-      - "${POSTGRES_PORT:-8123}:5432"
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-primac_postgres}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    volumes:
-      - postgresql_data:/var/lib/postgresql/data
+      - "3307:3306"
     networks:
-      - primac_network
+      - primac_net
+
+  # 🗄️ Base de datos PostgreSQL
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    restart: always
+    environment:
+    - POSTGRES_USER=${POSTGRES_USER}
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DB=${POSTGRES_DB}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 30s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 20s
       timeout: 10s
       retries: 5
-
-  # ==========================
-  # CASSANDRA DATABASE + SETUP + FAKE DATA
-  # ==========================
-  cassandra-db:
-    image: yiyi19/primac-cassandra:latest
-    build:
-      context: ./databases/Primac-Claims-Payments-DB
-    container_name: primac_cassandra_db
     ports:
-      - "${CASSANDRA_PORT:-8123}:9042"
-    environment:
-      - CASSANDRA_CLUSTER_NAME=${CASSANDRA_CLUSTER_NAME:-primac-cluster}
-      - CASSANDRA_NUM_TOKENS=${CASSANDRA_NUM_TOKENS:-128}
-      - CASSANDRA_START_RPC=${CASSANDRA_START_RPC:-true}
-    volumes:
-      - cassandra_data:/var/lib/cassandra
+      - "5432:5432"
     networks:
-      - primac_network
+      - primac_net
+    volumes:
+      - ./databases/proyecto_postgresql/init:/docker-entrypoint-initdb.d
+
+  # 🗄️ Base de datos Cassandra
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    restart: always
+    environment:
+      - CASSANDRA_CLUSTER_NAME=primac_cluster
+      - CASSANDRA_SEEDS=cassandra
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
     healthcheck:
       test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
-      interval: 15s
-      timeout: 10s
-      retries: 15
-
-  cassandra-setup:
-    image: cassandra:4.1
-    container_name: primac_cassandra_setup
-    restart: "no"
-    depends_on:
-      cassandra-db:
-        condition: service_healthy
+      interval: 30s
+      timeout: 15s
+      retries: 10
+    ports:
+      - "9042:9042"
+    networks:
+      - primac_net
     volumes:
-      - ./databases/Primac-Claims-Payments-DB/docker/scripts:/scripts
-    entrypoint:
-      - sh
-      - -c
-      - |
-        cqlsh cassandra-db -f /scripts/keyspace.local.cql && \
-        cqlsh cassandra-db -f /scripts/tables.cql
-    networks:
-      - primac_network
+      - cassandra_data:/var/lib/cassandra
 
-  cassandra-faker:
+  # 🔁 Servicio de Ingesta
+  ingesta:
     build:
-      context: ./databases/Primac-Claims-Payments-DB/faker
+      context: ./services/ingesta
       dockerfile: Dockerfile
-    container_name: primac_cassandra_faker
-    restart: "no"
+    container_name: ingesta
     depends_on:
-      cassandra-setup:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
     environment:
-      - PYTHONUNBUFFERED=1
+      - ENV_MODE=${ENVIRONMENT}
+      - AWS_REGION=${AWS_DEFAULT_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+    env_file:
+      - .env
     networks:
-      - primac_network
+      - primac_net
 
-  # ==========================
-  # DATA SCIENCE API
-  # ==========================
-  data-science-api:
-    image: yiyi19/primac-data-science-api:latest
+  # 📊 API Analítica
+  analytics_api:
     build:
       context: ./services/data_science_api
       dockerfile: Dockerfile
-    container_name: primac_data_science_api
-    ports:
-      - "${DATA_SCIENCE_API_PORT:-8123}:8000"
-    environment:
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-      AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
-      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
-      S3_BUCKET: ${S3_BUCKET}
-      MYSQL_URL: mysql://${MYSQL_USER:-admin}:${MYSQL_PASSWORD:-admin}@mysql-db:3306/${MYSQL_DATABASE:-primac}
-      POSTGRES_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgresql-db:5432/${POSTGRES_DB:-primac_postgres}
-      CASSANDRA_HOST: cassandra-db
-      CASSANDRA_PORT: ${CASSANDRA_PORT:-9042}
+    container_name: analytics_api
     depends_on:
-      - mysql-db
-      - postgresql-db
-      - cassandra-db
-    networks:
-      - primac_network
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
-
-  # ==========================
-  # MANAGEMENT TOOLS
-  # ==========================
-  adminer:
-    image: adminer
-    container_name: primac_adminer
-    restart: always
+      - mysql
+      - postgres
+      - cassandra
+    env_file:
+      - .env
     ports:
-      - "${ADMINER_PORT:-8123}:8080"
+      - "8000:8000"
     networks:
-      - primac_network
+      - primac_net
+
+  # 🌐 Balanceador de carga (Nginx)
+  load_balancer:
+    image: nginx:latest
+    container_name: nginx_lb
     depends_on:
-      - mysql-db
-      - postgresql-db
-
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: primac_pgadmin
+      - analytics_api
     ports:
-      - "${PGADMIN_PORT:-8123}:80"
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@admin.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      - "80:80"
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      - ./load_balancer/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
-      - primac_network
-    depends_on:
-      - postgresql-db
+      - primac_net
 
-# ==========================
-# VOLUMES
-# ==========================
 volumes:
-  mysql_data:
-  postgresql_data:
   cassandra_data:
-  pgadmin_data:
 
-# ==========================
-# NETWORKS
-# ==========================
 networks:
-  primac_network:
+  primac_net:
     driver: bridge

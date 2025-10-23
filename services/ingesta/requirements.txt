@@ -1,0 +1,8 @@
+pandas
+sqlalchemy
+psycopg2-binary
+pymysql
+cassandra-driver
+boto3
+python-dotenv
+cryptography
