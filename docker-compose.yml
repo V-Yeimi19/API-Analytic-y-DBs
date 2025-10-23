@@ -15,7 +15,7 @@ services:
     ports:
       - "3307:3306"
     networks:
-      - primac_net
+      - primac
 
   # 🗄️ Base de datos PostgreSQL
   postgres:
@@ -34,31 +34,11 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - primac_net
+      - primac
     volumes:
       - ./databases/proyecto_postgresql/init:/docker-entrypoint-initdb.d
 
-  # 🗄️ Base de datos Cassandra
-  cassandra:
-    image: cassandra:4.1
-    container_name: cassandra
-    restart: always
-    environment:
-      - CASSANDRA_CLUSTER_NAME=primac_cluster
-      - CASSANDRA_SEEDS=cassandra
-      - MAX_HEAP_SIZE=512M
-      - HEAP_NEWSIZE=128M
-    healthcheck:
-      test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-    ports:
-      - "9042:9042"
-    networks:
-      - primac_net
-    volumes:
-      - cassandra_data:/var/lib/cassandra
+  # 🗄️ Base de datos Cassandra 
 
   # 🔁 Servicio de Ingesta
   ingesta:
@@ -71,8 +51,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      cassandra:
-        condition: service_healthy
     environment:
       - ENV_MODE=${ENVIRONMENT}
       - AWS_REGION=${AWS_DEFAULT_REGION}
@@ -80,7 +58,7 @@ services:
     env_file:
       - .env
     networks:
-      - primac_net
+      - primac
 
   # 📊 API Analítica
   analytics_api:
@@ -91,13 +69,13 @@ services:
     depends_on:
       - mysql
       - postgres
-      - cassandra
+      #- cassandra_test
     env_file:
       - .env
     ports:
       - "8000:8000"
     networks:
-      - primac_net
+      - primac
 
   # 🌐 Balanceador de carga (Nginx)
   load_balancer:
@@ -110,11 +88,11 @@ services:
     volumes:
       - ./load_balancer/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
-      - primac_net
+      - primac
 
-volumes:
-  cassandra_data:
+#volumes:
+ # cassandra_data:
 
 networks:
-  primac_net:
-    driver: bridge
+  primac:
+    external: true

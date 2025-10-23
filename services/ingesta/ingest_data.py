@@ -151,7 +151,7 @@ def infer_glue_columns(df, table_name):
 def export_mysql():
     try:
         database_name = "primac_analytics_db"
-        engine = create_engine(f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}")
+        engine = create_engine(f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}")
         tables = pd.read_sql("SHOW TABLES;", engine)
         for t in tables.iloc[:, 0]:
             df = pd.read_sql(f"SELECT * FROM {t};", engine)

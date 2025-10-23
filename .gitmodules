@@ -4,9 +4,9 @@
 [submodule "databases/Primac-Claims-Payments-DB"]
 	path = databases/Primac-Claims-Payments-DB
 	url = https://github.com/Susopita/Primac-Claims-Payments-DB.git
-[submodule "databases/proyecto_postgresql"]
-	path = databases/proyecto_postgresql
-	url = https://github.com/andrxeaa/policy-db-postgres.git
 [submodule "services/data_science_api"]
 	path = services/data_science_api
 	url = https://github.com/V-Yeimi19/API-Analytic-Primac.git
+[submodule "databases/policy-db-postgres"]
+	path = databases/policy-db-postgres
+	url = git@github.com:andrxeaa/policy-db-postgres.git
