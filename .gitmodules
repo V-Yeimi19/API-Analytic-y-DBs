@@ -6,7 +6,7 @@
 	url = https://github.com/Susopita/Primac-Claims-Payments-DB.git
 [submodule "services/data_science_api"]
 	path = services/data_science_api
-	url = https://github.com/V-Yeimi19/API-Analytic-Primac.git
+	url = git@github.com:V-Yeimi19/API-Analytic-Primac.git
 [submodule "databases/policy-db-postgres"]
 	path = databases/policy-db-postgres
 	url = git@github.com:andrxeaa/policy-db-postgres.git
